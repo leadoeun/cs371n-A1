@@ -5,6 +5,7 @@ from sentiment_data import List
 from utils import *
 import numpy as np
 import random
+import math
 
 from collections import Counter
 
@@ -49,6 +50,7 @@ class UnigramFeatureExtractor(FeatureExtractor):
     def extract_features(self, sentence: List[str], add_to_indexer: bool=False)->Counter:
         count = Counter()
         for word in sentence:
+            # if word not in [",", ".", "!", "..."]:
             if (not self.indexer.contains(word)) and add_to_indexer:
                 self.indexer.add_and_get_index(word, True)
                 count[word] = 1
@@ -64,7 +66,29 @@ class BigramFeatureExtractor(FeatureExtractor):
     Bigram feature extractor analogous to the unigram one.
     """
     def __init__(self, indexer: Indexer):
-        raise Exception("Must be implemented")
+        self.indexer = indexer
+        # raise Exception("Must be implemented")
+
+    def get_indexer(self):
+        return self.indexer
+    
+    def initialization(self, train_exs):
+        count = Counter()
+        for sentence in train_exs:
+            count += self.extract_features(sentence.words, True)
+        return count
+    
+    def extract_features(self, sentence: List[str], add_to_indexer: bool = False) -> Counter:
+        count = Counter()
+        for idx in range(0, len(sentence) -1):
+            bigram = sentence[idx] + " " + sentence[idx + 1]
+            if (not self.indexer.contains(bigram)) and add_to_indexer:
+                self.indexer.add_and_get_index(bigram, True)
+                count[bigram] = 1
+            elif self.indexer.contains(bigram):
+                count[bigram] += 1
+        return count
+    
 
 
 class BetterFeatureExtractor(FeatureExtractor):
@@ -121,8 +145,21 @@ class LogisticRegressionClassifier(SentimentClassifier):
     superclass. Hint: you'll probably need this class to wrap both the weight vector and featurizer -- feel free to
     modify the constructor to pass these in.
     """
-    def __init__(self):
-        raise Exception("Must be implemented")
+    def __init__(self, weight_vector, featurizer):
+        self.weight = weight_vector
+        self.featurizer = featurizer
+        # raise Exception("Must be implemented")
+    def predict(self, sentence: List[str]) -> int:
+        fvec = self.featurizer.extract_features(sentence, False)
+        dot_product = 0.0
+        for word in sentence:
+            dot_product += self.weight[self.featurizer.get_indexer().index_of(word)] * fvec[word]
+        try:
+            prob = 1 / (1 + math.exp(-1 * dot_product))
+        except OverflowError:
+            prob = 1
+
+        return 1 if prob > 0.5 else 0
 
 
 def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureExtractor) -> PerceptronClassifier:
@@ -167,12 +204,12 @@ def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureE
                     idx = feat_extractor.get_indexer().index_of(word)
                     weight[idx] -= step_size * count[word]
 
-    n_highest = np.argpartition(weight, -10)[-10:]
-    for n in n_highest:
-        print(feat_extractor.get_indexer().get_object(n))
-    n_lowest = np.argpartition(weight, 10)[:10]
-    for n in n_lowest:
-        print(feat_extractor.get_indexer().get_object(n))
+    # n_highest = np.argpartition(weight, -10)[-10:]
+    # for n in n_highest:
+    #     print(feat_extractor.get_indexer().get_object(n))
+    # n_lowest = np.argpartition(weight, 10)[:10]
+    # for n in n_lowest:
+    #     print(feat_extractor.get_indexer().get_object(n))
     return PerceptronClassifier(weight, feat_extractor)
     raise Exception("Must be implemented")
 
@@ -184,6 +221,49 @@ def train_logistic_regression(train_exs: List[SentimentExample], feat_extractor:
     :param feat_extractor: feature extractor to use
     :return: trained LogisticRegressionClassifier model
     """
+    random.shuffle(train_exs)
+    count = feat_extractor.initialization(train_exs)
+    weight = np.zeros(len(feat_extractor.get_indexer()))
+    epochs = 20
+    step_size = 1.0
+    for t in range (0, epochs):
+        random.shuffle(train_exs)
+        if t % 3 == 0 and t != 0 and step_size > 0.07:
+            step_size -= 1/(2*math.sqrt(t))
+            # print(step_size)
+        if step_size < 0.07 and step_size >0.02:
+            step_size -= 0.01
+            # print(step_size)
+        for sentence in train_exs:
+            count = feat_extractor.extract_features(sentence.words, False)
+            # ypred = LogisticRegressionClassifier(weight, feat_extractor).predict(sentence.words)
+            
+            dot_product = 0.0
+            for word in sentence.words:
+                dot_product += weight[feat_extractor.get_indexer().index_of(word)] * count[word]
+          
+            if sentence.label == 1:
+                for word in sentence.words:
+                    idx = feat_extractor.get_indexer().index_of(word)
+                    try:
+                        prob = 1 / (1 + math.exp(-weight[idx] * count[word]))
+                    except OverflowError:
+                        # math.exp too big -> 1/infinity = 0 -> prob = 1
+                        prob = 1
+                    weight[idx] += step_size * count[word] * (1 - prob)
+            elif sentence.label == 0:
+                for word in sentence.words:
+                    idx = feat_extractor.get_indexer().index_of(word)
+                    try:
+                        prob = 1 - 1 / (1 + math.exp(-weight[idx] * count[word]))
+                    except OverflowError:
+                        # math.exp too big -> 1/infinity = 0 -> prob = 1
+                        prob = 1
+                    weight[idx] -= step_size * count[word] * (1 - prob)
+
+
+    return LogisticRegressionClassifier(weight, feat_extractor)
+
     raise Exception("Must be implemented")
 
 
