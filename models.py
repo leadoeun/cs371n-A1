@@ -38,10 +38,16 @@ class UnigramFeatureExtractor(FeatureExtractor):
         # raise Exception("Must be implemented")
     def get_indexer(self):
         return self.indexer
+    
+    def initialization(self, train_exs):
+        count = Counter()
+        for sentence in train_exs:
+            count += self.extract_features(sentence.words, True)
+        return count
+
+
     def extract_features(self, sentence: List[str], add_to_indexer: bool=False)->Counter:
         count = Counter()
-        for i in range(0,len(self.indexer)):
-            count[self.indexer.get_object(i)] = 0
         for word in sentence:
             if (not self.indexer.contains(word)) and add_to_indexer:
                 self.indexer.add_and_get_index(word, True)
@@ -103,7 +109,10 @@ class PerceptronClassifier(SentimentClassifier):
     def predict(self, sentence: List[str]) -> int:
         # use feature extractor to build feature vec (Counter)
         fvec = self.featurizer.extract_features(sentence, False)
-        return 1 if np.dot(self.weight, list(fvec.values())) > 0 else 0
+        dot_product = 0.0
+        for word in sentence:
+            dot_product += self.weight[self.featurizer.get_indexer().index_of(word)] * fvec[word]
+        return 1 if dot_product > 0 else 0
 
 
 class LogisticRegressionClassifier(SentimentClassifier):
@@ -125,13 +134,20 @@ def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureE
     """
     random.shuffle(train_exs)
     # initialize weight = 0 with length of indexer (len of feature vector)
-    for sentence in train_exs:
-        count = feat_extractor.extract_features(sentence.words, True)
+    count = feat_extractor.initialization(train_exs)
     weight = np.zeros(len(feat_extractor.get_indexer()))
-    epochs = 5
-    step_size = 0.5
-    print(len(weight), len(feat_extractor.get_indexer()))
+    epochs = 15
+    step_size = 1.3
+    # print(len(weight), len(feat_extractor.get_indexer()))
     for t in range (0, epochs):
+        random.shuffle(train_exs)
+        # epoch 15, step size 1.3
+        if t % 4 == 1:
+            step_size -= 0.3
+        #     print(t + 1)
+        # if t % 4 == 1:
+        #     step_size -= 1 / (t + 1)
+            # print(t+1)
         # for a single sentence
         for sentence in train_exs:
             # bag of words Counter
@@ -144,15 +160,19 @@ def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureE
                 for word in sentence.words:
                     # get index of weights that need to be updated
                     idx = feat_extractor.get_indexer().index_of(word)
-                    weight[idx] += step_size * list(count.values())[idx]
+                    weight[idx] += step_size * count[word]
             elif sentence.label == 0:
                 for word in sentence.words:
                     # get index of weights that need to be updated
                     idx = feat_extractor.get_indexer().index_of(word)
-                    weight[idx] -= step_size * list(count.values())[idx]
+                    weight[idx] -= step_size * count[word]
 
-    # count.values() not necessarily needed?
-    print(len(weight), len(feat_extractor.get_indexer()))
+    n_highest = np.argpartition(weight, -10)[-10:]
+    for n in n_highest:
+        print(feat_extractor.get_indexer().get_object(n))
+    n_lowest = np.argpartition(weight, 10)[:10]
+    for n in n_lowest:
+        print(feat_extractor.get_indexer().get_object(n))
     return PerceptronClassifier(weight, feat_extractor)
     raise Exception("Must be implemented")
 
