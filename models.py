@@ -134,8 +134,9 @@ class PerceptronClassifier(SentimentClassifier):
         # use feature extractor to build feature vec (Counter)
         fvec = self.featurizer.extract_features(sentence, False)
         dot_product = 0.0
-        for word in sentence:
+        for word in fvec:
             dot_product += self.weight[self.featurizer.get_indexer().index_of(word)] * fvec[word]
+            # print(self.weight[self.featurizer.get_indexer().index_of(word)])
         return 1 if dot_product > 0 else 0
 
 
@@ -152,7 +153,7 @@ class LogisticRegressionClassifier(SentimentClassifier):
     def predict(self, sentence: List[str]) -> int:
         fvec = self.featurizer.extract_features(sentence, False)
         dot_product = 0.0
-        for word in sentence:
+        for word in fvec:
             dot_product += self.weight[self.featurizer.get_indexer().index_of(word)] * fvec[word]
         try:
             prob = 1 / (1 + math.exp(-1 * dot_product))
@@ -169,6 +170,7 @@ def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureE
     :param feat_extractor: feature extractor to use
     :return: trained PerceptronClassifier model
     """
+    # random.seed(10)
     random.shuffle(train_exs)
     # initialize weight = 0 with length of indexer (len of feature vector)
     count = feat_extractor.initialization(train_exs)
@@ -181,28 +183,29 @@ def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureE
         # epoch 15, step size 1.3
         if t % 4 == 1:
             step_size -= 0.3
-        #     print(t + 1)
-        # if t % 4 == 1:
-        #     step_size -= 1 / (t + 1)
+            # print(step_size)
+
             # print(t+1)
         # for a single sentence
         for sentence in train_exs:
             # bag of words Counter
             # print("cp1")
             count = feat_extractor.extract_features(sentence.words, False)
+            
             ypred = PerceptronClassifier(weight, feat_extractor)
             if ypred.predict(sentence.words) == sentence.label:
                 continue
             elif sentence.label == 1:
-                for word in sentence.words:
+                for word in count:
                     # get index of weights that need to be updated
                     idx = feat_extractor.get_indexer().index_of(word)
                     weight[idx] += step_size * count[word]
             elif sentence.label == 0:
-                for word in sentence.words:
+                for word in count:
                     # get index of weights that need to be updated
                     idx = feat_extractor.get_indexer().index_of(word)
                     weight[idx] -= step_size * count[word]
+
 
     # n_highest = np.argpartition(weight, -10)[-10:]
     # for n in n_highest:
@@ -221,6 +224,7 @@ def train_logistic_regression(train_exs: List[SentimentExample], feat_extractor:
     :param feat_extractor: feature extractor to use
     :return: trained LogisticRegressionClassifier model
     """
+    # random.seed(15)
     random.shuffle(train_exs)
     count = feat_extractor.initialization(train_exs)
     weight = np.zeros(len(feat_extractor.get_indexer()))
@@ -243,7 +247,7 @@ def train_logistic_regression(train_exs: List[SentimentExample], feat_extractor:
                 dot_product += weight[feat_extractor.get_indexer().index_of(word)] * count[word]
           
             if sentence.label == 1:
-                for word in sentence.words:
+                for word in count:
                     idx = feat_extractor.get_indexer().index_of(word)
                     try:
                         prob = 1 / (1 + math.exp(-weight[idx] * count[word]))
@@ -252,7 +256,7 @@ def train_logistic_regression(train_exs: List[SentimentExample], feat_extractor:
                         prob = 1
                     weight[idx] += step_size * count[word] * (1 - prob)
             elif sentence.label == 0:
-                for word in sentence.words:
+                for word in count:
                     idx = feat_extractor.get_indexer().index_of(word)
                     try:
                         prob = 1 - 1 / (1 + math.exp(-weight[idx] * count[word]))
